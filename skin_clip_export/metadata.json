@@ -1,0 +1,75 @@
+{
+  "version": "ft-v1",
+  "backbone": "ViT-B/16",
+  "classes": [
+    "melanocytic nevus",
+    "melanoma",
+    "benign keratosis",
+    "basal cell carcinoma",
+    "actinic keratosis",
+    "vascular lesion",
+    "dermatofibroma"
+  ],
+  "codes": [
+    "nv",
+    "mel",
+    "bkl",
+    "bcc",
+    "akiec",
+    "vasc",
+    "df"
+  ],
+  "trained_on": "HAM10000 (lesion-grouped split)",
+  "temperature": 0.8051938414573669,
+  "beats_baseline": false,
+  "metrics": {
+    "B1 Zero-shot CLIP (baseline)": {
+      "Accuracy": 0.2083,
+      "Precision (macro)": 0.1568,
+      "Recall (macro)": 0.1617,
+      "F1 (macro)": 0.0857,
+      "F1 (weighted)": 0.1018,
+      "ROC-AUC (macro OvR)": 0.5863,
+      "Melanoma recall": 0.976
+    },
+    "B1b Zero-shot CLIP (prompt ensemble)": {
+      "Accuracy": 0.2098,
+      "Precision (macro)": 0.2142,
+      "Recall (macro)": 0.1697,
+      "F1 (macro)": 0.0966,
+      "F1 (weighted)": 0.1076,
+      "ROC-AUC (macro OvR)": 0.5866,
+      "Melanoma recall": 0.968
+    },
+    "B2 Linear probe (frozen CLIP)": {
+      "Accuracy": 0.6953,
+      "Precision (macro)": 0.6915,
+      "Recall (macro)": 0.7219,
+      "F1 (macro)": 0.7038,
+      "F1 (weighted)": 0.6943,
+      "ROC-AUC (macro OvR)": 0.9336,
+      "Melanoma recall": 0.6
+    },
+    "M-FT Fine-tuned CLIP (ours)": {
+      "Accuracy": 0.7381,
+      "Precision (macro)": 0.8136,
+      "Recall (macro)": 0.7464,
+      "F1 (macro)": 0.7651,
+      "F1 (weighted)": 0.7379,
+      "ROC-AUC (macro OvR)": 0.9443,
+      "Melanoma recall": 0.536
+    }
+  },
+  "config": {
+    "N_UNFROZEN": 8,
+    "EPOCHS": 50,
+    "LR_BACKBONE": 5e-06,
+    "LR_HEAD": 0.001,
+    "LABEL_SMOOTH": 0.1,
+    "TRAIN_CAP_PER_CLASS": 10000,
+    "SEED": 42
+  },
+  "n_train": 8056,
+  "n_val": 1136,
+  "n_test": 653
+}
