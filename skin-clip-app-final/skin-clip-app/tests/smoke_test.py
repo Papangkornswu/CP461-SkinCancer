@@ -101,4 +101,18 @@ code = (f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parents[1
 r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=Path(__file__).resolve().parents[1])
 print(r.stdout[-900:], r.stderr[-1500:] if r.returncode else "")
 assert r.returncode == 0 and list((model_dir / "cand").glob("*.pt"))
+# 5) symptom extraction (original CLIP + prompts), reference stats from the replay set, concept edits in the store
+import concepts as cx
+r0 = sk.extract_concepts(img)
+assert r0 is not None and r0[1] is False and not r0[0].any()        # no reference stats yet -> zeros, not calibrated
+assert sk.ensure_concept_stats() and (model_dir / "concept_stats.json").exists()
+z, cal = sk.extract_concepts(img)
+assert cal and z.shape == (len(cx.CONCEPT_IDS),) and np.abs(z).max() <= cx.Z_MAX
+adj = cx.rediagnose(pred.probs, z, z + 0.5, codes)
+assert abs(sum(adj.values()) - 1) < 1e-6
+st.add_concept_edit(img=img, prediction=pred.to_dict(), adjusted_probs=adj, concept_ids=cx.CONCEPT_IDS,
+                    z_extracted=z, z_edited=z + 0.5, reviewer_id="dr-x")
+assert len(st.concept_edits()) == 1
+print("symptoms ok")
+
 print("\nALL SMOKE TESTS PASSED")
