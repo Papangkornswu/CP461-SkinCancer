@@ -1,11 +1,13 @@
-# DermaCLIP Review
+# ClipSkinCancer
 
-Fine-tuned CLIP (HAM10000, 7 classes) behind a Streamlit UI, with a **physician approval workflow** whose data feeds continual retraining.
+Fine-tuned CLIP (HAM10000, 7 classes) behind a Streamlit UI, with **editable dermoscopic symptoms** (z-score sliders that re-diagnose live)
+and a **physician approval workflow** whose data feeds continual retraining.
 
 ```
 ICBM_Skin_CLIP_FineTune.ipynb   train + evaluate (baseline vs fine-tuned), exports model/
 app.py                          Streamlit UI (analyze · physician review · analytics · model card)
-core.py                         model definition / inference / image gate (shared with retrain.py)
+core.py                         model definition / inference / image gate / symptom extraction (shared with retrain.py)
+concepts.py                     25 symptoms, z-scoring, re-diagnosis, "check first" recommendation (pure numpy)
 i18n.py                         English / Thai UI strings
 feedback_store.py               SQLite + image store for reviews
 retrain.py                      continual fine-tuning with a no-regression gate
@@ -29,12 +31,19 @@ streamlit run app.py
 * **Language:** EN / ไทย toggle (top right). **Theme:** Light / Dark switch. Both are remembered in the URL (`?lang=th&theme=dark`).
 * **Physician review:** choosing "Correct diagnosis" and a label updates the result card and chart immediately; the review is stored on *Submit*.
   After saving, **Change my label** re-opens the form; the newer review supersedes the old one (latest review per image wins at training time).
-* **Image check:** non-skin images are blocked before prediction (`SKIN_GATE_MIN`, default 0.5; `SKIN_GATE=0` disables it and saves ~200 MB RAM).
+* **Symptom editor (step 2):** the original CLIP scores 25 dermoscopic symptoms on the image; each is shown as a z-score slider
+  (0 = dataset average, + = clearly present, − = absent). Moving a slider re-diagnoses instantly: the model's log-probabilities are
+  shifted by `0.8 · W · (z_edited − z_extracted)`, so untouched sliders change nothing. **Orange frame** = the symptoms that best
+  separate the rank-1 and rank-2 disease. *Save edits* stores before/after z-scores in the `concept_edits` table.
+  `W` is a clinical-knowledge prior in `concepts.py`, **not learned**: treat the new diagnosis as a second opinion.
+  Reference mean/std come from `model/replay/` and are cached in `model/concept_stats.json` on first start (delete it to rebuild).
+  `CONCEPTS=0` hides the editor.
+* **Image check:** non-skin images are blocked before prediction (`SKIN_GATE_MIN`, default 0.5; `SKIN_GATE=0` disables it; the original-CLIP image tower, ~200 MB RAM, is only freed if `CONCEPTS=0` too).
 
 ## 3 · Deploy
 ```bash
-docker build -t dermaclip .
-docker run -p 8501:8501 -e REVIEWER_PASSCODE='...' -v dermaclip-data:/app/data dermaclip
+docker build -t clipskincancer .
+docker run -p 8501:8501 -e REVIEWER_PASSCODE='...' -v clipskincancer-data:/app/data clipskincancer
 ```
 * **Mount a persistent volume on `/app/data`**: it holds the feedback DB and images. Hosts with ephemeral disks
   (Streamlit Community Cloud, free Hugging Face Spaces) will lose reviews on restart.

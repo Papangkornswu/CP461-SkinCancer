@@ -29,7 +29,8 @@ S = {
  "deid_check": ("I confirm this image is de-identified and I am authorised to use it.",
                 "ฉันยืนยันว่าภาพนี้ไม่มีข้อมูลระบุตัวตน และฉันได้รับอนุญาตให้ใช้ภาพนี้"),
  # step 2
- "step2": ("2 · Model prediction", "2 · ผลทำนายของโมเดล"),
+ "pred_title": ("Model prediction", "ผลทำนายของโมเดล"),
+ "step2": ("2 · Review and edit symptoms", "2 · ตรวจสอบและแก้ไขค่าอาการ"),
  "upload_prompt": ("Upload an image to see the model's assessment.", "อัปโหลดภาพเพื่อดูผลประเมินของโมเดล"),
  "confirm_prompt": ("Please confirm the de-identification statement to run the model.",
                     "โปรดยืนยันว่าภาพนี้ไม่มีข้อมูลระบุตัวตนก่อนรันโมเดล"),
@@ -59,6 +60,41 @@ S = {
  "prob_axis": ("Probability (%)", "ความน่าจะเป็น (%)"),
  "chart_legend": ("Teal = model's top prediction · Amber = physician's label",
                   "สีเขียวอมฟ้า = ผลทำนายสูงสุดของโมเดล · สีเหลืองอำพัน = ป้ายของแพทย์"),
+ # step 2: symptom (concept) editor
+ "cx_reset": ("Restore extracted values", "คืนค่าที่สกัดได้"),
+ "cx_save": ("Save edits", "บันทึกการแก้ไข"),
+ "cx_legend": ("z-score: 0 = dataset average, positive = clearly present, negative = absent · "
+               "<b style=\"color:#C2410C\">orange frame</b> = the system suggests checking this first "
+               "(separates rank 1 from rank 2) · the diagnosis updates instantly as you move a slider",
+               "ค่า z-score: 0 = ระดับทั่วไปของชุดข้อมูล, บวก = เห็นอาการชัด, ลบ = ไม่พบ · "
+               "<b style=\"color:#C2410C\">กรอบสีส้ม</b> = ระบบแนะนำให้ตรวจก่อน (แยกโรคอันดับ 1 กับ 2) · "
+               "ผลทำนายอัปเดตทันทีขณะเลื่อน"),
+ "grp_structure": ("Structure / pattern", "โครงสร้าง / รูปแบบ"),
+ "grp_color": ("Color", "สี"),
+ "grp_surface": ("Surface / vessels", "พื้นผิว / หลอดเลือด"),
+ "cx_new_title": ("New diagnosis (after symptom edits)", "ผลวินิจฉัยใหม่ (หลังปรับค่าอาการ)"),
+ "cx_unchanged": ("No symptom edited yet: the diagnosis is the model's own prediction.",
+                  "ยังไม่ได้แก้ค่าอาการ: ผลวินิจฉัยเท่ากับที่โมเดลทำนาย"),
+ "cx_meta": ("confidence <b>{c}%</b> (model gave {b}%) · {n} symptom(s) edited",
+             "ความมั่นใจ <b>{c}%</b> (โมเดลให้ {b}%) · แก้ไข {n} อาการ"),
+ "cx_changed": ("Diagnosis changed: <b>{old}</b> → <b>{new}</b>", "ผลวินิจฉัยเปลี่ยน: <b>{old}</b> → <b>{new}</b>"),
+ "cx_same_top": ("Top diagnosis is still <b>{new}</b>; only the probabilities moved.",
+                 "ผลอันดับ 1 ยังเป็น <b>{new}</b> มีเพียงความน่าจะเป็นที่เปลี่ยน"),
+ "cx_chart_legend": ("Grey = original model · Teal = after your symptom edits",
+                     "สีเทา = โมเดลเดิม · สีเขียวอมฟ้า = หลังปรับค่าอาการ"),
+ "cx_series_old": ("Model", "โมเดลเดิม"), "cx_series_new": ("After edits", "หลังปรับค่า"),
+ "cx_uncal": ("No reference statistics found (model/replay/ is missing), so every slider starts at 0.0. "
+              "Your edits still change the diagnosis, but nothing is extracted from the image.",
+              "ไม่พบข้อมูลอ้างอิง (ไม่มี model/replay/) ทุกแถบจึงเริ่มที่ 0.0 การแก้ไขยังเปลี่ยนผลวินิจฉัยได้ "
+              "แต่ไม่มีค่าที่สกัดจากภาพ"),
+ "cx_off": ("The symptom editor is disabled (CONCEPTS=0).", "ปิดการแก้ไขค่าอาการอยู่ (CONCEPTS=0)"),
+ "cx_loading": ("Preparing symptom statistics (first run only)...", "กำลังเตรียมสถิติอ้างอิงของอาการ (ครั้งแรกเท่านั้น)..."),
+ "cx_extracting": ("Extracting symptoms...", "กำลังสกัดค่าอาการ..."),
+ "cx_saved": ("Symptom edits saved.", "บันทึกการแก้ไขค่าอาการแล้ว"),
+ "cx_err_reviewer": ("Enter your reviewer ID (step 1) before saving.", "โปรดกรอกรหัส/อักษรย่อผู้ตรวจสอบ (ขั้นตอนที่ 1) ก่อนบันทึก"),
+ "cx_nothing": ("Nothing to save: no slider has been changed.", "ไม่มีการแก้ไขให้บันทึก: ยังไม่ได้ปรับแถบใด"),
+ "cx_use_hint": ("Symptom edits changed the diagnosis to <b>{new}</b>.", "การปรับค่าอาการเปลี่ยนผลวินิจฉัยเป็น <b>{new}</b>"),
+ "cx_use": ("Use this diagnosis as my correction", "ใช้ผลวินิจฉัยนี้เป็นการแก้ไขของฉัน"),
  # step 3
  "step3": ("3 · Physician review", "3 · แพทย์ตรวจสอบ"),
  "reviewer": ("Reviewer ID / initials", "รหัส / อักษรย่อผู้ตรวจสอบ"),
@@ -102,6 +138,7 @@ S = {
  "m_reviews": ("Reviews", "จำนวนรีวิว"),
  "m_agree": ("Physician agreement", "แพทย์เห็นด้วยกับโมเดล"),
  "m_corr": ("Corrections", "จำนวนที่แก้ไข"),
+ "m_cedits": ("Symptom edits", "จำนวนที่แก้ค่าอาการ"),
  "m_ready": ("Ready for retraining", "พร้อมใช้เทรนซ้ำ"),
  "progress": ("Progress toward the next retraining batch", "ความคืบหน้าสู่รอบเทรนซ้ำถัดไป"),
  "ch_agree": ("Agreement by model prediction", "อัตราเห็นด้วย แยกตามผลทำนายของโมเดล"),
@@ -138,6 +175,7 @@ S = {
 - Heavily class-imbalanced source data; rare classes (dermatofibroma, vascular) have few examples.
 - Labels from physician feedback inherit reviewer bias; histopathology-confirmed labels are weighted highest.
 - Confidence is calibrated on a validation split and can drift on new data: monitor the analytics tab.
+- Symptom z-scores come from zero-shot CLIP text prompts, and the weights that turn edited symptoms into a new diagnosis are a clinical-knowledge prior, not learned from data. Treat the new diagnosis as a second opinion.
 """, """
 **วัตถุประสงค์การใช้งาน** ช่วยสนับสนุนการตัดสินใจของแพทย์ผู้ตรวจภาพ dermoscopy ไม่ใช่เครื่องมือวินิจฉัย
 
@@ -147,6 +185,7 @@ S = {
 - ข้อมูลต้นทางไม่สมดุลมาก คลาสที่พบน้อย (dermatofibroma, vascular) มีตัวอย่างน้อย
 - ป้ายจาก feedback ของแพทย์ย่อมมีอคติของผู้ตรวจ ป้ายที่ยืนยันด้วยชิ้นเนื้อจึงถูกให้น้ำหนักสูงสุด
 - ความมั่นใจถูกปรับด้วย validation set และอาจคลาดเคลื่อนกับข้อมูลใหม่ โปรดติดตามในแท็บสถิติ
+- ค่า z-score ของอาการได้จาก zero-shot CLIP ด้วยข้อความ prompt และน้ำหนักที่แปลงค่าอาการที่แก้แล้วเป็นผลวินิจฉัยใหม่ มาจากความรู้ทางคลินิก ไม่ได้เรียนรู้จากข้อมูล โปรดใช้ผลวินิจฉัยใหม่เป็นความเห็นที่สองเท่านั้น
 """),
 }
 

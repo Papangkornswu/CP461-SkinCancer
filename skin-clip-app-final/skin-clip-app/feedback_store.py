@@ -1,4 +1,4 @@
-"""SQLite-backed store for physician reviews (the continuous-improvement data set)."""
+"""SQLite-backed store for physician reviews and symptom (concept) edits (the continuous-improvement data set)."""
 from __future__ import annotations
 
 import hashlib
@@ -35,6 +35,22 @@ CREATE TABLE IF NOT EXISTS reviews (
     notes TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reviews_sha ON reviews(image_sha256);
+CREATE TABLE IF NOT EXISTS concept_edits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    image_sha256 TEXT NOT NULL,
+    image_path TEXT NOT NULL,
+    model_version TEXT NOT NULL,
+    reviewer_id TEXT NOT NULL,
+    base_pred TEXT NOT NULL,
+    adjusted_pred TEXT NOT NULL,
+    base_probs_json TEXT NOT NULL,
+    adjusted_probs_json TEXT NOT NULL,
+    z_extracted_json TEXT NOT NULL,
+    z_edited_json TEXT NOT NULL,
+    calibrated INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_cedits_sha ON concept_edits(image_sha256);
 """
 DECISIONS = ("approved", "corrected", "unusable")
 LABEL_BASIS = ("Clinical impression", "Dermoscopic review", "Histopathology-confirmed")
@@ -110,7 +126,36 @@ class FeedbackStore:
                  reviewer_certainty, lesion_site or None, (notes or "").strip() or None))
             return int(cur.lastrowid)
 
+    def add_concept_edit(self, *, img: Image.Image, prediction: dict, adjusted_probs: dict, concept_ids: list[str],
+                         z_extracted, z_edited, reviewer_id: str, calibrated: bool = True) -> int:
+        """Stores the physician's symptom edits for one image (z-scores before/after) and the diagnosis they gave.
+        These are concept-level labels: a richer signal than the final label alone."""
+        if not reviewer_id.strip():
+            raise ValueError("Reviewer ID is required")
+        if not (len(concept_ids) == len(z_extracted) == len(z_edited)):
+            raise ValueError("concept / z-score length mismatch")
+        sha, rel = self.save_image(img)
+        zx = {c: round(float(v), 3) for c, v in zip(concept_ids, z_extracted)}
+        ze = {c: round(float(v), 3) for c, v in zip(concept_ids, z_edited)}
+        adj = max(adjusted_probs, key=adjusted_probs.get)
+        with self._conn() as c:
+            cur = c.execute(
+                """INSERT INTO concept_edits (created_at, image_sha256, image_path, model_version, reviewer_id,
+                   base_pred, adjusted_pred, base_probs_json, adjusted_probs_json, z_extracted_json, z_edited_json,
+                   calibrated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (datetime.now(timezone.utc).isoformat(timespec="seconds"), sha, rel, prediction["model_version"],
+                 reviewer_id.strip(), prediction["top_code"], adj, json.dumps(prediction["probs"]),
+                 json.dumps(adjusted_probs), json.dumps(zx), json.dumps(ze), int(calibrated)))
+            return int(cur.lastrowid)
+
     # ------------------------------------------------------------------ reads
+    def concept_edits(self) -> pd.DataFrame:
+        with self._conn() as c:
+            df = pd.read_sql_query("SELECT * FROM concept_edits ORDER BY id", c)
+        if not df.empty:
+            df["created_at"] = pd.to_datetime(df["created_at"])
+        return df
+
     def reviews(self) -> pd.DataFrame:
         with self._conn() as c:
             df = pd.read_sql_query("SELECT * FROM reviews ORDER BY id", c)
@@ -139,8 +184,11 @@ class FeedbackStore:
         df = self.reviews()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr("reviews.csv", df.to_csv(index=False))
+            z.writestr("concept_edits.csv", self.concept_edits().to_csv(index=False))
             if include_images:
-                for rel in df["image_path"].unique() if not df.empty else []:
+                ce = self.concept_edits()
+                rels = set(df["image_path"]) | set(ce["image_path"])
+                for rel in sorted(rels):
                     p = self.root / rel
                     if p.exists():
                         z.write(p, rel)

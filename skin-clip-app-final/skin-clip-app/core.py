@@ -19,6 +19,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 
+import concepts as cx
+
 DEFAULT_CLASSES = ["melanocytic nevus", "melanoma", "benign keratosis", "basal cell carcinoma",
                    "actinic keratosis", "vascular lesion", "dermatofibroma"]
 DEFAULT_CODES = ["nv", "mel", "bkl", "bcc", "akiec", "vasc", "df"]
@@ -102,7 +104,7 @@ def save_checkpoint(net: SkinCLIPNet, path, *, n_blocks: int, backbone: str, cla
 
 
 def build_net_from_checkpoint(ckpt_path) -> tuple[SkinCLIPNet, dict, object]:
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     base, preprocess = load_base_clip(ckpt["backbone"])
     missing, unexpected = base.visual.load_state_dict(
         {k: v.float() for k, v in ckpt["visual_tuned"].items()}, strict=False)
@@ -121,22 +123,24 @@ GATE_NEGATIVE = ["a photo of a dog", "a photo of a cat", "a photo of an animal",
                  "a scanned text document", "a cartoon or illustration", "a photo of a plant or flower"]
 
 
-class SkinGate:
-    """Rejects images that are clearly not skin lesions. The 7-class classifier cannot do this by itself:
-    softmax always distributes 100% over the known diseases, even for a photo of a dog.
-    Uses the ORIGINAL (not fine-tuned) CLIP zero-shot, kept in bfloat16 to limit memory (~180 MB)."""
+class BaseCLIP:
+    """The ORIGINAL (not fine-tuned) CLIP image tower, kept in bfloat16 to limit memory (~180 MB), plus prompt banks.
+    Used for (a) the skin-image gate and (b) scoring the dermoscopic symptoms (concepts).
+
+    The gate is needed because the 7-class classifier cannot reject images by itself: softmax always distributes
+    100% over the known diseases, even for a photo of a dog."""
 
     def __init__(self, backbone: str = "ViT-B/32", device: str = "cpu"):
         import clip
         base, self.preprocess = load_base_clip(backbone)
-        prompts = GATE_POSITIVE + GATE_NEGATIVE
+        banks = {"gate": GATE_POSITIVE + GATE_NEGATIVE, "concepts": cx.PROMPTS}
         with torch.no_grad():
-            self.text = F.normalize(base.encode_text(clip.tokenize(prompts)).float(), dim=-1)
+            self.text = {k: F.normalize(base.encode_text(clip.tokenize(v)).float(), dim=-1).to(device)
+                         for k, v in banks.items()}
         self.n_pos = len(GATE_POSITIVE)
         self.visual = self._to_bf16(base.visual).eval()       # text tower is freed with `base`
         self.device = device
         self.visual.to(device)
-        self.text = self.text.to(device)
 
     @staticmethod
     def _to_bf16(visual: nn.Module) -> nn.Module:
@@ -160,11 +164,22 @@ class SkinGate:
         return visual
 
     @torch.inference_mode()
-    def skin_score(self, img: Image.Image) -> float:
+    def image_features(self, img: Image.Image) -> torch.Tensor:
         x = self.preprocess(img.convert("RGB")).unsqueeze(0).to(self.device).to(torch.bfloat16)
-        f = F.normalize(self.visual(x).float(), dim=-1)
-        p = torch.softmax(100.0 * f @ self.text.T, dim=-1)[0]
+        return F.normalize(self.visual(x).float(), dim=-1)
+
+    @torch.inference_mode()
+    def skin_score(self, img: Image.Image) -> float:
+        p = torch.softmax(100.0 * self.image_features(img) @ self.text["gate"].T, dim=-1)[0]
         return float(p[: self.n_pos].sum())
+
+    @torch.inference_mode()
+    def concept_scores(self, img: Image.Image) -> np.ndarray:
+        """Raw cosine similarity of the image to every symptom prompt, shape (n_concepts,)."""
+        return (self.image_features(img) @ self.text["concepts"].T)[0].cpu().numpy().astype(np.float64)
+
+
+SkinGate = BaseCLIP      # backwards-compatible name
 
 
 # --------------------------------------------------------------------------- inference
@@ -202,13 +217,51 @@ class SkinCLIP:
             self.net = SkinCLIPNet(base.visual, zero_shot_head(base, self.classes)).eval()
             self.temperature, self.version, self.is_finetuned = 1.0, "baseline-zero-shot", False
         self.net.to(self.device)
-        self.gate = None
-        if os.environ.get("SKIN_GATE", "1") != "0":
-            self.gate = SkinGate(self.metadata.get("backbone", "ViT-B/32"), self.device)
+        self.gate_enabled = os.environ.get("SKIN_GATE", "1") != "0"
+        self.concepts_enabled = os.environ.get("CONCEPTS", "1") != "0"
+        self.base = None            # original CLIP, shared by the skin gate and the symptom extractor
+        if self.gate_enabled or self.concepts_enabled:
+            self.base = BaseCLIP(self.metadata.get("backbone", "ViT-B/32"), self.device)
+        self.concept_stats = cx.load_stats(ckpt_path.parent / "concept_stats.json") if self.concepts_enabled else None
+        self.replay_dir = ckpt_path.parent / "replay"
 
     def skin_score(self, img: Image.Image) -> float | None:
         """Probability (0-1) that the image is a skin lesion photo; None if the gate is disabled."""
-        return None if self.gate is None else self.gate.skin_score(img)
+        return self.base.skin_score(img) if (self.base is not None and self.gate_enabled) else None
+
+    # ------------------------------------------------------------------ symptoms (concepts)
+    def ensure_concept_stats(self, max_images: int = 400) -> bool:
+        """Reference mean/std of every concept score, computed once from model/replay/ and cached in
+        model/concept_stats.json. Returns False if no reference images exist (z-scores then start at 0)."""
+        if not self.concepts_enabled or self.concept_stats is not None:
+            return self.concept_stats is not None
+        import pandas as pd
+        man = self.replay_dir / "manifest.csv"
+        if not man.exists():
+            return False
+        files = pd.read_csv(man)["file"].tolist()[:max_images]
+        raw = []
+        for f in files:
+            p = self.replay_dir / f
+            if p.exists():
+                raw.append(self.base.concept_scores(Image.open(p).convert("RGB")))
+        if len(raw) < 10:
+            return False
+        self.concept_stats = cx.make_stats(np.stack(raw))
+        try:
+            cx.save_stats(self.concept_stats, self.replay_dir.parent / "concept_stats.json")
+        except OSError:
+            pass                     # read-only model dir: keep the stats in memory only
+        return True
+
+    def extract_concepts(self, img: Image.Image) -> tuple[np.ndarray, bool] | None:
+        """(z-scores aligned with concepts.CONCEPT_IDS, calibrated?) or None if the symptom editor is disabled.
+        Not calibrated -> no reference statistics, every slider starts at 0 (physician edits still work)."""
+        if not self.concepts_enabled or self.base is None:
+            return None
+        if self.concept_stats is None:
+            return np.zeros(len(cx.CONCEPT_IDS)), False
+        return cx.to_z(self.base.concept_scores(img.convert("RGB")), self.concept_stats), True
 
     @torch.inference_mode()
     def _logits(self, img: Image.Image, tta: bool) -> torch.Tensor:
